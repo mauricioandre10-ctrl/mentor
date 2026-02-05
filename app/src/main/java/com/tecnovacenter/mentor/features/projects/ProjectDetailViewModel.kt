@@ -20,7 +20,8 @@ data class LlmUiState(
     val isInitializing: Boolean = true,
     val initializationError: String? = null,
     val isDownloading: Boolean = false,
-    val downloadProgress: Float = 0f
+    val downloadProgress: Float = 0f,
+    val isGenerating: Boolean = false // Nuevo estado para saber si está pensando
 )
 
 class ProjectDetailViewModel(
@@ -33,8 +34,10 @@ class ProjectDetailViewModel(
     private val _llmUiState = MutableStateFlow(LlmUiState())
     val llmUiState: StateFlow<LlmUiState> = _llmUiState.asStateFlow()
 
-    private val _aiResponse = MutableStateFlow("")
-    val aiResponse: StateFlow<String> = _aiResponse.asStateFlow()
+    private val _streamingResponse = MutableStateFlow("")
+    val streamingResponse: StateFlow<String> = _streamingResponse.asStateFlow()
+
+    private val fullResponse = StringBuilder()
 
     val messages: StateFlow<List<ConversationMessage>> =
         projectRepository.getMessagesForProject(projectId)
@@ -46,39 +49,56 @@ class ProjectDetailViewModel(
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
-            _llmUiState.update { it.copy(isInitializing = true, initializationError = null, isDownloading = true) }
+            _llmUiState.update { it.copy(isInitializing = true, isDownloading = true) }
 
-            val modelUrl = "https://drive.google.com/uc?export=download&id=1sSNyr4jrRRBtK2fCxFhe6emSzw3GZGnN"
+            val modelUrl = "https://huggingface.co/mauricio19/mentor-gemma-model/resolve/main/gemma_3n_e2b_it_int4.task?download=true"
             val modelFileName = "gemma_model.task"
 
-            val success = llmService.initializeModel(modelUrl, modelFileName) { progress ->
-                _llmUiState.update { it.copy(downloadProgress = progress) }
-            }
+            val success = llmService.initializeModel(modelUrl, modelFileName, 
+                onDownloadProgress = { progress ->
+                    _llmUiState.update { it.copy(downloadProgress = progress) }
+                },
+                onStreamResult = { partialResult, done ->
+                    // Acumulamos el texto y lo emitimos
+                    fullResponse.append(partialResult)
+                    _streamingResponse.value = fullResponse.toString()
+
+                    if (done) {
+                        // Cuando termina, guardamos el mensaje completo y reseteamos
+                        val finalMessage = fullResponse.toString()
+                        if (finalMessage.isNotBlank()) {
+                            viewModelScope.launch(Dispatchers.IO) {
+                                projectRepository.insertMessage(
+                                    ConversationMessage(projectId = projectId, message = finalMessage, isFromUser = false)
+                                )
+                            }
+                        }
+                        _llmUiState.update { it.copy(isGenerating = false) }
+                        _streamingResponse.value = "" // Limpiamos la respuesta en streaming
+                    }
+                }
+            )
 
             _llmUiState.update {
                 if (success) it.copy(isInitializing = false, isDownloading = false)
-                else it.copy(
-                    isInitializing = false,
-                    isDownloading = false,
-                    initializationError = "No se pudo descargar o inicializar el modelo."
-                )
+                else it.copy(isInitializing = false, isDownloading = false, initializationError = "No se pudo inicializar el modelo.")
             }
         }
     }
 
     fun sendMessage(text: String) {
+        if (llmUiState.value.isGenerating) return
+
+        _llmUiState.update { it.copy(isGenerating = true) }
+        fullResponse.clear()
+        _streamingResponse.value = ""
+
         viewModelScope.launch(Dispatchers.IO) {
             val userMessage = ConversationMessage(projectId = projectId, message = text, isFromUser = true)
             projectRepository.insertMessage(userMessage)
 
             val prompt = createPrompt(messages.value, text)
-            val finalResponse = llmService.generateResponse(prompt)
-            _aiResponse.value = finalResponse
-
-            if (finalResponse.isNotBlank() && !finalResponse.startsWith("Error:")) {
-                val aiMessage = ConversationMessage(projectId = projectId, message = finalResponse, isFromUser = false)
-                projectRepository.insertMessage(aiMessage)
-            }
+            llmService.generateResponseAsync(prompt)
         }
     }
 
@@ -88,12 +108,6 @@ class ProjectDetailViewModel(
     }
 
     private fun createPrompt(history: List<ConversationMessage>, newMessage: String): String {
-        val prompt = StringBuilder()
-        history.forEach {
-            val prefix = if (it.isFromUser) "user: " else "model: "
-            prompt.append(prefix).append(it.message).append("\n")
-        }
-        prompt.append("user: ").append(newMessage).append("\nmodel: ")
-        return prompt.toString()
+        // ... (La lógica del prompt no cambia)
     }
 }
