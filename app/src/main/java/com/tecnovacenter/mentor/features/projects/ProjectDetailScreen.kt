@@ -1,7 +1,6 @@
 package com.tecnovacenter.mentor.features.projects
 
 import android.app.Application
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +18,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
@@ -26,6 +26,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,7 +43,7 @@ import com.tecnovacenter.mentor.data.local.AppDatabase
 import com.tecnovacenter.mentor.data.repository.ProjectRepository
 import com.tecnovacenter.mentor.features.llm.LlmService
 import com.tecnovacenter.mentor.data.ConversationMessage
-import com.tecnovacenter.mentor.ui.theme.seed
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -82,32 +83,39 @@ fun ChatScreen(projectId: Long) {
     val factory = ViewModelFactory(application, repository, projectId, llmService)
     val viewModel: ProjectDetailViewModel = viewModel(factory = factory)
 
-    val messages by viewModel.messages.collectAsState()
-    val streamingResponse by viewModel.streamingResponse.collectAsState()
+    val messages by viewModel.uiMessages.collectAsState()
     val llmState by viewModel.llmUiState.collectAsState()
     var newMessage by remember { mutableStateOf("") }
 
     if (llmState.isDownloading) {
-        // ... (La pantalla de descarga no cambia)
+        Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Text("Descargando modelo...", textAlign = TextAlign.Center)
+                Spacer(modifier = Modifier.height(8.dp))
+                CircularProgressIndicator()
+            }
+        }
     } else if (llmState.isInitializing) {
-        // ... (La pantalla de inicialización no cambia)
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator()
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Inicializando motor...")
+            }
+        }
     } else if (llmState.initializationError != null) {
-        // ... (La pantalla de error no cambia)
+        Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+            Text(llmState.initializationError!!, textAlign = TextAlign.Center)
+        }
     } else {
         Column(modifier = Modifier.fillMaxSize()) {
             LazyColumn(
                 modifier = Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 4.dp),
                 reverseLayout = true
             ) {
-                // Renderiza la respuesta de la IA en streaming
-                if (streamingResponse.isNotBlank()) {
-                    item {
-                        ChatMessageItem(message = ConversationMessage(message = streamingResponse, isFromUser = false, projectId = projectId))
-                    }
-                }
-                // Renderiza los mensajes ya guardados
                 items(messages.reversed()) { message ->
-                    ChatMessageItem(message = message)
+                    val isStreamingMessage = !message.isFromUser && llmState.isGenerating && message.id == 0L
+                    ChatMessageItem(message = message, isStreaming = isStreamingMessage)
                 }
             }
             Row(
@@ -143,9 +151,26 @@ fun ChatScreen(projectId: Long) {
 }
 
 @Composable
-fun ChatMessageItem(message: ConversationMessage) {
-    val messageColor = if (message.isFromUser) seed else Color(0xFFF0F0F0)
-    val textColor = if (message.isFromUser) Color.White else Color.Black
+fun ChatMessageItem(message: ConversationMessage, isStreaming: Boolean) {
+    var displayedText by remember { mutableStateOf("") }
+
+    LaunchedEffect(key1 = message.message) {
+        if (isStreaming) {
+            val fullText = message.message
+            if (displayedText.length < fullText.length) {
+                val textToAnimate = fullText.substring(displayedText.length)
+                for (char in textToAnimate) {
+                    displayedText += char
+                    delay(40)
+                }
+            }
+        } else {
+            displayedText = message.message
+        }
+    }
+
+    val messageColor = if (message.isFromUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+    val textColor = if (message.isFromUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
     val arrangement = if (message.isFromUser) Arrangement.End else Arrangement.Start
 
     Row(
@@ -157,7 +182,7 @@ fun ChatMessageItem(message: ConversationMessage) {
             colors = CardDefaults.cardColors(containerColor = messageColor)
         ) {
             Text(
-                text = message.message,
+                text = displayedText,
                 color = textColor,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
             )
