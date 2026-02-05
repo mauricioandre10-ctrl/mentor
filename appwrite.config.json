@@ -1,0 +1,119 @@
+{
+    "projectId": "6984675e0030df7227b1",
+    "projectName": "MentorDeObra",
+    "settings": {
+        "services": {
+            "account": true,
+            "avatars": true,
+            "databases": true,
+            "locale": true,
+            "health": true,
+            "storage": true,
+            "teams": true,
+            "users": true,
+            "sites": true,
+            "functions": true,
+            "graphql": true,
+            "messaging": true
+        },
+        "auth": {
+            "methods": {
+                "jwt": true,
+                "phone": true,
+                "invites": true,
+                "anonymous": true,
+                "email-otp": true,
+                "magic-url": true,
+                "email-password": true
+            },
+            "security": {
+                "duration": 31536000,
+                "limit": 0,
+                "sessionsLimit": 10,
+                "passwordHistory": 0,
+                "passwordDictionary": false,
+                "personalDataCheck": false,
+                "sessionAlerts": false,
+                "mockNumbers": []
+            }
+        }
+    },
+    "functions": [
+        {
+            "$id": "validateLicense",
+            "name": "validateLicense",
+            "runtime": "node-18.0",
+            "specification": "s-0.5vcpu-512mb",
+            "execute": [
+                "any"
+            ],
+            "events": [],
+            "scopes": [
+                "users.read"
+            ],
+            "schedule": "",
+            "timeout": 15,
+            "enabled": true,
+            "logging": true,
+            "entrypoint": "src/main.js",
+            "commands": "npm install",
+            "ignore": [
+                "node_modules",
+                ".npm"
+            ],
+            "path": "functions/validateLicense"
+        }
+    ],
+    "tablesDB": [
+        {
+            "$id": "698467e60005423e5bb8",
+            "name": "main",
+            "enabled": true
+        }
+    ],
+    "tables": [
+        {
+            "$id": "licenses",
+            "$permissions": [
+                "read(\"any\")"
+            ],
+            "databaseId": "698467e60005423e5bb8",
+            "name": "licenses",
+            "enabled": true,
+            "rowSecurity": true,
+            "columns": [
+                {
+                    "key": "userId",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 255,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "expirationDate",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 255,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "deviceId",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 255,
+                    "default": null,
+                    "encrypt": false
+                }
+            ],
+            "indexes": []
+        }
+    ],
+    "buckets": [],
+    "teams": [],
+    "topics": []
+}
